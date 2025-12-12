@@ -5,9 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>声音地图 | 记录校园与生活的声音</title>
   
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.css" />
-  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.Default.css" />
+  <!-- 国内CDN，加载更快 -->
+  <link rel="stylesheet" href="https://cdn.bootcdn.net/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+  <link rel="stylesheet" href="https://cdn.bootcdn.net/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.min.css" />
+  <link rel="stylesheet" href="https://cdn.bootcdn.net/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.Default.min.css" />
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
   
@@ -1610,8 +1611,9 @@
     </div>
   </div>
 
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="https://unpkg.com/leaflet.markercluster@1.4.1/dist/leaflet.markercluster.js"></script>
+  <!-- 国内CDN -->
+  <script src="https://cdn.bootcdn.net/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+  <script src="https://cdn.bootcdn.net/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
   <script>
@@ -1676,7 +1678,7 @@
     }
 
     // 当前是否使用高德底图
-    let isGaodeMap = false
+    let isGaodeMap = true  // 只用高德地图，默认开启坐标转换
     const SUPABASE_URL = 'https://auscpzddqrvammzwulpd.supabase.co'
     const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF1c2NwemRkcXJ2YW1tend1bHBkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjUzMzE0MzAsImV4cCI6MjA4MDkwNzQzMH0.3oQs78i71AH-UdwHXZVgXkvys5e5ejvm3vh-Qci_QxQ'
     
@@ -1719,35 +1721,33 @@
     // 缩放控件放右下角（移动端更友好）
     L.control.zoom({ position: 'bottomright' }).addTo(map)
 
-    // 多种底图
+    // 只保留高德地图（国内可用），删除需要翻墙的底图
     const baseMaps = {
-      '简洁': L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-        attribution: '© OpenStreetMap, CartoDB',
-        maxZoom: 19
+      '高德地图': L.tileLayer('https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}', {
+        subdomains: '1234',
+        attribution: '© 高德地图',
+        maxZoom: 18
       }),
-      'OpenStreetMap': L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '© OpenStreetMap',
-        maxZoom: 19
-      }),
-      '暗色': L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-        attribution: '© OpenStreetMap',
-        maxZoom: 19
-      }),
-      '高德': L.tileLayer('https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}', {
+      '高德卫星': L.tileLayer('https://webst0{s}.is.autonavi.com/appmaptile?style=6&x={x}&y={y}&z={z}', {
         subdomains: '1234',
         attribution: '© 高德地图',
         maxZoom: 18
       })
     }
     
-    baseMaps['简洁'].addTo(map)
+    // 默认使用高德地图
+    baseMaps['高德地图'].addTo(map)
+    
+    // 因为只有高德，默认开启坐标转换
+    isGaodeMap = true
     
     // 图层控件放左下角
     L.control.layers(baseMaps, null, { position: 'bottomleft' }).addTo(map)
 
-    // 监听底图切换
+    // 监听底图切换（高德地图和高德卫星都是GCJ-02坐标系，isGaodeMap保持true）
     map.on('baselayerchange', function(e) {
-      isGaodeMap = (e.name === '高德')
+      // 高德地图和高德卫星都使用GCJ-02坐标系
+      isGaodeMap = true
       // 重新加载声音点以更新坐标
       if (soundsData.length > 0) {
         renderMarkers()
