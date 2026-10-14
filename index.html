@@ -4,6 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>声音地图 | 记录校园与生活的声音</title>
+  <meta name="referrer" content="strict-origin-when-cross-origin">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.css">
   
   <!-- 国内CDN，加载更快 -->
   <link rel="stylesheet" href="https://cdn.bootcdn.net/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
@@ -1614,6 +1616,8 @@
   <!-- 国内CDN -->
   <script src="https://cdn.bootcdn.net/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
   <script src="https://cdn.bootcdn.net/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@maplibre/maplibre-gl-leaflet@0.0.22/leaflet-maplibre-gl.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
   <script>
@@ -1677,8 +1681,9 @@
       }
     }
 
-    // 当前是否使用高德底图
-    let isGaodeMap = true  // 只用高德地图，默认开启坐标转换
+    // OpenFreeMap 与声音数据库使用同一 WGS84 坐标约定。
+    // 保留旧代码的兼容分支但关闭高德转换，防止点位发生额外偏移。
+    const isGaodeMap = false
     const SUPABASE_URL = 'https://auscpzddqrvammzwulpd.supabase.co'
     const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF1c2NwemRkcXJ2YW1tend1bHBkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjUzMzE0MzAsImV4cCI6MjA4MDkwNzQzMH0.3oQs78i71AH-UdwHXZVgXkvys5e5ejvm3vh-Qci_QxQ'
     
@@ -1711,6 +1716,7 @@
     const map = L.map('map', {
       center: [31.2304, 121.4737],
       zoom: 12,
+      maxZoom: 20,
       zoomControl: false, // 自定义控件位置
       preferCanvas: true, // 使用Canvas渲染，性能更好
       tap: true, // 移动端点击优化
@@ -1721,38 +1727,55 @@
     // 缩放控件放右下角（移动端更友好）
     L.control.zoom({ position: 'bottomright' }).addTo(map)
 
-    // 只保留高德地图（国内可用），删除需要翻墙的底图
-    const baseMaps = {
-      '高德地图': L.tileLayer('https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}', {
-        subdomains: '1234',
-        attribution: '© 高德地图',
-        maxZoom: 18
-      }),
-      '高德卫星': L.tileLayer('https://webst0{s}.is.autonavi.com/appmaptile?style=6&x={x}&y={y}&z={z}', {
-        subdomains: '1234',
-        attribution: '© 高德地图',
-        maxZoom: 18
-      })
+    // 免费矢量底图：无需注册或 Key。数据来源为 OpenStreetMap。
+    // 三种样式共享同一份数据，样式变化不影响声音坐标。
+    map.attributionControl.addAttribution('<a href="https://openfreemap.org/" target="_blank" rel="noopener">OpenFreeMap</a> · &copy; <a href="https://openmaptiles.org/" target="_blank" rel="noopener">OpenMapTiles</a> · &copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors')
+    const baseMaps = {}
+    const basemapStatus = L.control({ position: 'topright' })
+    basemapStatus.onAdd = () => {
+      const box = L.DomUtil.create('div', 'sound-basemap-status')
+      box.setAttribute('role', 'status')
+      box.style.cssText = 'display:none;background:#13131a;color:#fff;padding:10px;max-width:240px;border-radius:8px;font-size:12px;line-height:1.5;'
+      L.DomEvent.disableClickPropagation(box)
+      return box
     }
-    
-    // 默认使用高德地图
-    baseMaps['高德地图'].addTo(map)
-    
-    // 因为只有高德，默认开启坐标转换
-    isGaodeMap = true
-    
-    // 图层控件放左下角
-    L.control.layers(baseMaps, null, { position: 'bottomleft' }).addTo(map)
-
-    // 监听底图切换（高德地图和高德卫星都是GCJ-02坐标系，isGaodeMap保持true）
-    map.on('baselayerchange', function(e) {
-      // 高德地图和高德卫星都使用GCJ-02坐标系
-      isGaodeMap = true
-      // 重新加载声音点以更新坐标
-      if (soundsData.length > 0) {
-        renderMarkers()
+    basemapStatus.addTo(map)
+    function showBasemapStatus(message) {
+      const box = basemapStatus.getContainer()
+      box.textContent = message
+      box.style.display = message ? 'block' : 'none'
+    }
+    try {
+      if (typeof maplibregl === 'undefined' || typeof L.maplibreGL !== 'function') throw new Error('底图组件未下载')
+      for (const [label, style] of [['标准地图', 'bright'], ['浅色地图', 'positron'], ['深色地图', 'dark']]) {
+        const layer = L.maplibreGL({
+          style: `https://tiles.openfreemap.org/styles/${style}`,
+          interactive: false, attributionControl: false, maxZoom: 20
+        })
+        layer.on('add', () => {
+          const glMap = layer.getMaplibreMap()
+          let failed = false
+          glMap.on('error', e => {
+            console.warn('底图加载失败', e.error)
+            failed = true
+            if (map.hasLayer(layer)) showBasemapStatus('底图暂时加载失败，请检查网络或切换底图。')
+          })
+          glMap.on('idle', () => {
+            if (glMap.areTilesLoaded() && map.hasLayer(layer)) {
+              failed = false
+              showBasemapStatus('')
+            }
+          })
+          if (!failed) showBasemapStatus('')
+        })
+        baseMaps[label] = layer
       }
-    })
+      baseMaps['标准地图'].addTo(map)
+      L.control.layers(baseMaps, null, { position: 'bottomleft' }).addTo(map)
+    } catch (e) {
+      console.warn(e)
+      showBasemapStatus('底图未能启动，请检查网络和浏览器硬件加速。声音记录列表仍可使用。')
+    }
 
     const soundsLayer = L.markerClusterGroup({
       maxClusterRadius: 50,
